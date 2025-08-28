@@ -3,7 +3,6 @@
     <div class="chat-header">
       <div class="user-info">
         <h3>{{ userInfo?.is_admin ? '管理员面板' : '聊天室' }}</h3>
-        <span class="username">{{ userInfo?.username }}</span>
       </div>
       <button @click="logout" class="logout-btn">退出登录</button>
     </div>
@@ -30,7 +29,7 @@
       </div>
 
       <div class="chat-area">
-        <div class="chat-box" ref="chatBox">
+        <div class="chat-box" ref="chatBoxRef">
           <div v-if="messages.length === 0" class="no-messages">
             {{ userInfo?.is_admin ? '选择一个用户开始聊天' : '开始聊天吧！' }}
           </div>
@@ -44,46 +43,100 @@
             }"
           >
             <div class="message-header">
-              <strong>{{ message.username }}</strong>
-              <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
-              <button 
-                v-if="message.can_delete" 
-                @click="deleteMessage(message.id)"
-                class="delete-btn"
-                title="撤回消息"
-              >
-                🗑️
-              </button>
+              <template v-if="isOwnMessage(message)">
+                <!-- 自己的消息：名字、时间、删除按钮 -->
+                <strong>{{ message.username }}</strong>
+                <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
+                <button 
+                  v-if="message.can_delete" 
+                  @click="deleteMessage(message.id)"
+                  class="delete-btn"
+                  title="撤回消息"
+                >
+                  🗑️
+                </button>
+              </template>
+              <template v-else>
+                <!-- 他人的消息：名字、时间、删除按钮 -->
+                <strong>{{ message.username }}</strong>
+                <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
+                <button 
+                  v-if="message.can_delete" 
+                  @click="deleteMessage(message.id)"
+                  class="delete-btn"
+                  title="撤回消息"
+                >
+                  🗑️
+                </button>
+              </template>
             </div>
             <div class="message-content">
               <!-- 文本消息 -->
-              <div v-if="message.message_type === 'text'">{{ message.content }}</div>
+              <div v-if="message.message_type === 'text'" class="text-message">
+                {{ message.content }}
+              </div>
               
               <!-- 图片消息 -->
               <div v-else-if="message.message_type === 'image'" class="image-message">
+                <!-- 显示文字说明部分 -->
+                <div v-if="getFileDescription(message.content)" class="file-description">
+                  {{ getFileDescription(message.content) }}
+                </div>
                 <img 
                   :src="`/api/chat/download/${message.id}`" 
                   :alt="message.file_name"
-                  @click="openImage(`/api/chat/download/${message.id}`, message.file_name)"
+                  @click="previewFile(message)"
                   class="message-image"
                 />
                 <div class="file-info">
-                  {{ message.file_name }} ({{ formatFileSize(message.file_size) }})
+                  🖼️ {{ message.file_name || '图片文件' }} ({{ formatFileSize(message.file_size) }})
+                  <button 
+                    @click="previewFile(message)"
+                    class="preview-btn"
+                    title="预览图片"
+                  >
+                    🔍 预览
+                  </button>
                 </div>
               </div>
               
               <!-- 文件消息 -->
               <div v-else-if="message.message_type === 'file'" class="file-message">
-                <div class="file-icon">📄</div>
-                <div class="file-details">
-                  <div class="file-name">{{ message.file_name }}</div>
-                  <div class="file-size">{{ formatFileSize(message.file_size) }}</div>
-                  <button 
-                    @click="downloadFile(message.id, message.file_name)"
-                    class="download-btn"
-                  >
-                    下载
-                  </button>
+                <!-- 显示文字说明部分 -->
+                <div v-if="getFileDescription(message.content)" class="file-description">
+                  {{ getFileDescription(message.content) }}
+                </div>
+                <div class="file-container">
+                  <div class="file-icon">{{ getFileIcon(message.file_name) }}</div>
+                  <div class="file-details">
+                    <div class="file-name">{{ message.file_name || '未知文件' }}</div>
+                    <div class="file-size">{{ formatFileSize(message.file_size) }}</div>
+                    <div class="file-actions">
+                      <!-- 预览按钮（根据文件类型决定是否显示） -->
+                      <button 
+                        v-if="canPreviewFile(message.file_name)"
+                        @click="previewFile(message)"
+                        class="preview-btn"
+                        title="预览文件"
+                      >
+                        👁️ 预览
+                      </button>
+                      <!-- 用系统应用打开按钮 -->
+                      <button 
+                        @click="openWithApp(message.id, message.file_name)"
+                        class="open-app-btn"
+                        title="用默认应用打开"
+                      >
+                        🔗 打开
+                      </button>
+                      <button 
+                        @click="downloadFile(message.id, message.file_name)"
+                        class="download-btn"
+                      >
+                        📥 下载
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -110,20 +163,21 @@
 
           <!-- 输入区域 -->
           <div class="message-input-container">
-            <input
+            <textarea
               v-model="newMessage"
-              @keyup.enter="sendMessage"
+              @keydown="handleKeyDown"
               :placeholder="getInputPlaceholder()"
               class="message-input"
               :disabled="!canSendMessage()"
-            />
+              ref="textareaRef"
+              rows="1"
+            ></textarea>
             
             <!-- 文件上传按钮 -->
             <input
               ref="fileInput"
               type="file"
               @change="handleFileSelect"
-              accept="image/*,.pdf,.doc,.docx,.txt,.xls,.xlsx"
               style="display: none"
             />
             
@@ -132,11 +186,9 @@
                 @click="triggerFileUpload" 
                 :disabled="!canSendMessage()"
                 class="file-btn"
-                title="发送文件/图片"
+                title="📎 发送任意文件"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M21.44 11.05l-9.19 9.19c-1.78 1.78-4.61 1.78-6.39 0s-1.78-4.61 0-6.39l9.19-9.19c1.05-1.05 2.73-1.05 3.78 0s1.05 2.73 0 3.78l-9.19 9.19c-.34.34-.87.34-1.21 0s-.34-.87 0-1.21l8.48-8.48"/>
-                </svg>
+                📎
               </button>
               
               <!-- 发送按钮 -->
@@ -144,15 +196,72 @@
                 @click="sendMessage" 
                 :disabled="!canSendMessage() || (!newMessage.trim() && !selectedFile)"
                 class="send-btn"
+                :title="selectedFile ? '🚀 发送文件' : '💬 发送消息'"
               >
-                <svg v-if="selectedFile" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                </svg>
-                <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                </svg>
+                {{ selectedFile ? '🚀' : '💬' }}
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 文件预览模态框 -->
+    <div v-if="previewModal.show" class="preview-modal" @click="closePreview">
+      <div class="preview-modal-content" @click.stop>
+        <div class="preview-header">
+          <h3 class="preview-title">{{ previewModal.fileName }}</h3>
+          <button @click="closePreview" class="close-btn" title="关闭预览">✕</button>
+        </div>
+        
+        <div class="preview-body">
+          <!-- 图片预览 -->
+          <div v-if="previewModal.type === 'image'" class="image-preview">
+            <img 
+              :src="previewModal.url" 
+              :alt="previewModal.fileName"
+              class="preview-image"
+              @load="onImageLoad"
+            />
+          </div>
+          
+          <!-- 代码文件预览 -->
+          <div v-else-if="previewModal.type === 'code'" class="code-preview">
+            <div v-if="previewModal.loading" class="loading">
+              📄 正在加载文件内容...
+            </div>
+            <div v-else-if="previewModal.error" class="error">
+              ❌ 加载失败: {{ previewModal.error }}
+            </div>
+            <pre v-else class="code-content"><code>{{ previewModal.content }}</code></pre>
+          </div>
+          
+          <!-- 其他文件预览提示 -->
+          <div v-else class="unsupported-preview">
+            <div class="file-icon-large">{{ getFileIcon(previewModal.fileName) }}</div>
+            <h4>{{ previewModal.fileName }}</h4>
+            <p>此文件类型暂不支持在线预览</p>
+            <div class="preview-actions">
+              <button @click="downloadFromPreview" class="action-btn download">
+                📥 下载文件
+              </button>
+              <button @click="openWithAppFromPreview" class="action-btn open">
+                🔗 用默认应用打开
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="preview-footer">
+          <div class="file-info-detailed">
+            <span>文件大小: {{ formatFileSize(previewModal.fileSize) }}</span>
+            <span v-if="previewModal.type === 'image'" class="image-dimensions">
+              {{ previewModal.dimensions }}
+            </span>
+          </div>
+          <div class="preview-actions">
+            <button @click="downloadFromPreview" class="action-btn">📥 下载</button>
+            <button @click="openWithAppFromPreview" class="action-btn">🔗 打开</button>
           </div>
         </div>
       </div>
@@ -161,7 +270,7 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick, onUnmounted } from 'vue';
+import { ref, onMounted, nextTick, onUnmounted, watch } from 'vue';
 import { getUserInfo, clearUserInfo } from '../utils/storage';
 import { apiGet, apiPost } from '../utils/api';
 
@@ -176,6 +285,85 @@ export default {
     const selectedUserId = ref(null);
     const selectedFile = ref(null);
     const fileInput = ref(null);
+    const textareaRef = ref(null);
+    const chatBoxRef = ref(null);
+    
+    // 文件预览相关
+    const previewModal = ref({
+      show: false,
+      type: '', // 'image', 'code', 'other'
+      fileName: '',
+      fileSize: 0,
+      url: '',
+      content: '',
+      loading: false,
+      error: '',
+      messageId: null,
+      dimensions: ''
+    });
+
+    // 处理键盘事件
+    const handleKeyDown = (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+      }
+    };
+
+    // 自动调整文本域高度
+    const adjustTextareaHeight = () => {
+      const textarea = textareaRef.value;
+      if (textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+      }
+    };
+
+    // 监听输入变化
+    const watchNewMessage = () => {
+      nextTick(() => {
+        adjustTextareaHeight();
+      });
+    };
+
+    // 提取文件描述（从content中提取文字说明部分）
+    const getFileDescription = (content) => {
+      if (!content) return '';
+      // 匹配格式：[IMAGE/FILE] 文件名 - 说明内容
+      const match = content.match(/\[(IMAGE|FILE)\] .+ - (.+)/);
+      return match ? match[2] : '';
+    };
+
+    // 根据文件类型获取对应的emoji图标
+    const getFileIcon = (fileName) => {
+      if (!fileName) return '📄';
+      
+      const extension = fileName.toLowerCase().split('.').pop();
+      const iconMap = {
+        'pdf': '📋',
+        'doc': '📝',
+        'docx': '📝',
+        'txt': '📄',
+        'xls': '📊',
+        'xlsx': '📊',
+        'ppt': '📊',
+        'pptx': '📊',
+        'zip': '🗜️',
+        'rar': '🗜️',
+        '7z': '🗜️',
+        'mp3': '🎵',
+        'mp4': '🎬',
+        'avi': '🎬',
+        'mov': '🎬',
+        'jpg': '🖼️',
+        'jpeg': '🖼️',
+        'png': '🖼️',
+        'gif': '🖼️',
+        'webp': '🖼️'
+      };
+      
+      return iconMap[extension] || '📄';
+    };
 
     const logout = async () => {
       // 设置用户离线状态
@@ -227,8 +415,8 @@ export default {
           message_id: messageId
         });
         
-        // 重新加载聊天记录
-        await loadChatHistory();
+        // 重新加载聊天记录，不自动滚动（保持当前位置）
+        await loadChatHistory(false);
       } catch (err) {
         console.error('删除消息失败:', err);
         alert('撤回消息失败：' + (err.response?.data?.detail || err.message));
@@ -237,14 +425,14 @@ export default {
 
     const selectUser = (userId) => {
       selectedUserId.value = userId;
-      loadChatHistory();
+      loadChatHistory(true); // 选择用户时，滚动到底部
     };
 
     const isOwnMessage = (message) => {
       return message.username === userInfo.value?.username;
     };
 
-    const loadChatHistory = async () => {
+    const loadChatHistory = async (shouldScrollToBottom = false) => {
       if (!userInfo.value) return;
       
       try {
@@ -256,9 +444,31 @@ export default {
         }
           
         const response = await apiGet(url);
+        const oldMessagesLength = messages.value.length;
         messages.value = response.messages || [];
+        
+        // 调试：检查文件消息的数据
+        const fileMessages = messages.value.filter(m => m.message_type === 'file' || m.message_type === 'image');
+        if (fileMessages.length > 0) {
+          console.log('文件消息数据:', fileMessages.map(m => ({
+            id: m.id,
+            file_name: m.file_name,
+            message_type: m.message_type,
+            content: m.content
+          })));
+        }
+        
         await nextTick();
-        scrollToBottom();
+        
+        // 只在以下情况下自动滚动到底部：
+        // 1. 明确要求滚动到底部（shouldScrollToBottom = true）
+        // 2. 这是新消息（消息数量增加了）
+        // 3. 用户当前就在底部附近（距离底部小于100px）
+        if (shouldScrollToBottom || 
+            (messages.value.length > oldMessagesLength) ||
+            isNearBottom()) {
+          scrollToBottom();
+        }
       } catch (err) {
         console.error('加载聊天记录失败:', err);
       }
@@ -293,7 +503,7 @@ export default {
         await apiPost('/chat/send_message', requestData);
         
         newMessage.value = '';
-        await loadChatHistory();
+        await loadChatHistory(true); // 发送消息后滚动到底部
       } catch (err) {
         console.error('发送消息失败:', err);
         alert('消息发送失败，请重试');
@@ -337,7 +547,7 @@ export default {
           fileInput.value.value = '';
         }
         
-        await loadChatHistory();
+        await loadChatHistory(true); // 发送文件后滚动到底部
       } catch (err) {
         console.error('发送文件失败:', err);
         alert('文件发送失败：' + err.message);
@@ -357,23 +567,7 @@ export default {
       // 检查文件大小 (10MB)
       const maxSize = 10 * 1024 * 1024;
       if (file.size > maxSize) {
-        alert('文件大小不能超过10MB');
-        if (fileInput.value) {
-          fileInput.value.value = '';
-        }
-        return;
-      }
-
-      // 检查文件类型
-      const allowedTypes = [
-        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-        'text/plain', 'application/pdf', 
-        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      ];
-
-      if (!allowedTypes.includes(file.type)) {
-        alert('不支持的文件类型。支持图片、PDF、Word文档、Excel表格和文本文件。');
+        alert('⚠️ 文件大小不能超过10MB');
         if (fileInput.value) {
           fileInput.value.value = '';
         }
@@ -381,8 +575,7 @@ export default {
       }
 
       selectedFile.value = file;
-      // 清空文本输入框，文件和文本分开发送
-      newMessage.value = '';
+      // 保留文本输入框的内容作为文件说明
     };
 
     const removeSelectedFile = () => {
@@ -405,7 +598,150 @@ export default {
       document.body.removeChild(link);
     };
 
+    // 判断文件是否可以预览
+    const canPreviewFile = (fileName) => {
+      if (!fileName) return false;
+      
+      const extension = fileName.toLowerCase().split('.').pop();
+      const previewableExtensions = [
+        // 图片
+        'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg',
+        // 代码和文本
+        'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'jsx', 'tsx',
+        'py', 'java', 'cpp', 'c', 'h', 'cs', 'php', 'rb', 'go', 'rs', 'swift',
+        'kt', 'scala', 'sql', 'yml', 'yaml', 'ini', 'conf', 'log',
+        'vue', 'svelte', 'astro'
+      ];
+      
+      return previewableExtensions.includes(extension);
+    };
+
+    // 获取文件预览类型
+    const getFilePreviewType = (fileName) => {
+      if (!fileName) return 'other';
+      
+      const extension = fileName.toLowerCase().split('.').pop();
+      
+      // 图片类型
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)) {
+        return 'image';
+      }
+      
+      // 代码和文本类型
+      if ([
+        'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'jsx', 'tsx',
+        'py', 'java', 'cpp', 'c', 'h', 'cs', 'php', 'rb', 'go', 'rs', 'swift',
+        'kt', 'scala', 'sql', 'yml', 'yaml', 'ini', 'conf', 'log',
+        'vue', 'svelte', 'astro'
+      ].includes(extension)) {
+        return 'code';
+      }
+      
+      return 'other';
+    };
+
+    // 预览文件
+    const previewFile = async (message) => {
+      const previewType = getFilePreviewType(message.file_name);
+      
+      previewModal.value = {
+        show: true,
+        type: previewType,
+        fileName: message.file_name,
+        fileSize: message.file_size,
+        messageId: message.id,
+        url: `/api/chat/download/${message.id}`,
+        content: '',
+        loading: false,
+        error: '',
+        dimensions: ''
+      };
+      
+      // 如果是代码文件，需要加载内容
+      if (previewType === 'code') {
+        await loadFileContent(message.id);
+      }
+    };
+
+    // 加载文件内容（用于代码预览）
+    const loadFileContent = async (messageId) => {
+      previewModal.value.loading = true;
+      previewModal.value.error = '';
+      
+      try {
+        const response = await fetch(`/api/chat/download/${messageId}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const text = await response.text();
+        previewModal.value.content = text;
+      } catch (error) {
+        console.error('加载文件内容失败:', error);
+        previewModal.value.error = error.message;
+      } finally {
+        previewModal.value.loading = false;
+      }
+    };
+
+    // 图片加载完成时获取尺寸
+    const onImageLoad = (event) => {
+      const img = event.target;
+      previewModal.value.dimensions = `${img.naturalWidth} × ${img.naturalHeight}`;
+    };
+
+    // 关闭预览
+    const closePreview = () => {
+      previewModal.value.show = false;
+      // 清理数据
+      setTimeout(() => {
+        previewModal.value = {
+          show: false,
+          type: '',
+          fileName: '',
+          fileSize: 0,
+          url: '',
+          content: '',
+          loading: false,
+          error: '',
+          messageId: null,
+          dimensions: ''
+        };
+      }, 300);
+    };
+
+    // 从预览框下载文件
+    const downloadFromPreview = () => {
+      if (previewModal.value.messageId) {
+        downloadFile(previewModal.value.messageId, previewModal.value.fileName);
+      }
+    };
+
+    // 用系统应用打开文件
+    const openWithApp = async (messageId, fileName) => {
+      try {
+        // 首先下载文件到临时位置
+        const link = document.createElement('a');
+        link.href = `/api/chat/download/${messageId}`;
+        link.target = '_blank'; // 在新标签页打开，让浏览器处理
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (error) {
+        console.error('打开文件失败:', error);
+        alert('打开文件失败，请尝试下载后手动打开');
+      }
+    };
+
+    // 从预览框用系统应用打开
+    const openWithAppFromPreview = () => {
+      if (previewModal.value.messageId) {
+        openWithApp(previewModal.value.messageId, previewModal.value.fileName);
+      }
+    };
+
     const openImage = (url, fileName) => {
+      // 这个方法保留用于兼容，但推荐使用previewFile
       window.open(url, '_blank');
     };
 
@@ -425,31 +761,72 @@ export default {
     };
 
     const getInputPlaceholder = () => {
-      if (!userInfo.value) return '请先登录...';
+      if (!userInfo.value) return '📝 请先登录...';
       if (userInfo.value.is_admin && !selectedUserId.value) {
-        return '请先选择一个用户...';
+        return '👆 请先选择一个用户...';
       }
       if (selectedFile.value) {
-        return '文件已选择，可以添加文字说明或直接发送...';
+        return '📎 文件已选择，可以添加说明文字 ✨';
       }
-      return '输入消息...';
+      return '💭 输入消息...';
     };
 
     const formatTime = (timestamp) => {
-      const date = new Date(timestamp);
-      return date.toLocaleTimeString('zh-CN', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
+      // 创建Date对象，JavaScript会自动处理时区转换
+      let date = new Date(timestamp);
+      
+      // 如果时间戳看起来是UTC格式，确保正确解析
+      if (typeof timestamp === 'string' && !timestamp.includes('+') && !timestamp.endsWith('Z')) {
+        // 如果后端返回的时间戳没有时区信息，假设它是UTC时间
+        date = new Date(timestamp + 'Z');
+      }
+      
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const messageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      
+      // 如果是今天的消息，只显示时间
+      if (messageDate.getTime() === today.getTime()) {
+        return date.toLocaleTimeString('zh-CN', { 
+          hour: '2-digit', 
+          minute: '2-digit'
+        });
+      }
+      // 如果是昨天的消息，显示"昨天 + 时间"
+      else if (messageDate.getTime() === today.getTime() - 24 * 60 * 60 * 1000) {
+        return '昨天 ' + date.toLocaleTimeString('zh-CN', { 
+          hour: '2-digit', 
+          minute: '2-digit'
+        });
+      }
+      // 其他日期，显示月日 + 时间
+      else {
+        return date.toLocaleDateString('zh-CN', { 
+          month: '2-digit', 
+          day: '2-digit'
+        }) + ' ' + date.toLocaleTimeString('zh-CN', { 
+          hour: '2-digit', 
+          minute: '2-digit'
+        });
+      }
     };
 
     const scrollToBottom = () => {
-      const chatBox = document.querySelector('.chat-box');
+      const chatBox = chatBoxRef.value;
       if (chatBox) {
         setTimeout(() => {
           chatBox.scrollTop = chatBox.scrollHeight;
         }, 100);
       }
+    };
+
+    const isNearBottom = () => {
+      const chatBox = chatBoxRef.value;
+      if (!chatBox) return true; // 如果没有chatBox，默认认为在底部
+      
+      const { scrollTop, scrollHeight, clientHeight } = chatBox;
+      // 如果距离底部小于100px，认为用户在底部附近
+      return scrollHeight - scrollTop - clientHeight < 100;
     };
 
     onMounted(async () => {
@@ -464,15 +841,22 @@ export default {
       // 设置用户在线状态
       await updateOnlineStatus(true);
 
-      await loadChatHistory();
+      await loadChatHistory(true); // 初始加载时滚动到底部
       
       if (userInfo.value.is_admin) {
         await loadUsers();
       }
 
+      // 监听textarea输入变化，自动调整高度
+      watch(newMessage, () => {
+        nextTick(() => {
+          adjustTextareaHeight();
+        });
+      });
+
       // 定期刷新聊天记录和用户列表
       setInterval(async () => {
-        await loadChatHistory();
+        await loadChatHistory(false); // 定期刷新时不自动滚动
         if (userInfo.value.is_admin) {
           await loadUsers();
         }
@@ -507,6 +891,9 @@ export default {
       selectedUserId,
       selectedFile,
       fileInput,
+      textareaRef,
+      chatBoxRef,
+      previewModal,
       sendMessage,
       loadChatHistory,
       selectUser,
@@ -523,6 +910,17 @@ export default {
       downloadFile,
       openImage,
       formatFileSize,
+      handleKeyDown,
+      getFileDescription,
+      getFileIcon,
+      watchNewMessage,
+      canPreviewFile,
+      previewFile,
+      closePreview,
+      onImageLoad,
+      downloadFromPreview,
+      openWithApp,
+      openWithAppFromPreview,
     };
   },
 };
@@ -533,40 +931,50 @@ export default {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f5f5f5;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e0 100%);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .chat-header {
-  background: #667eea;
-  color: white;
-  padding: 15px 20px;
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(10px);
+  color: #333;
+  padding: 20px 25px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+  border-radius: 0 0 20px 20px;
 }
 
 .user-info h3 {
   margin: 0;
-  font-size: 1.2em;
+  font-size: 1.3em;
+  font-weight: 600;
+  color: #4a5568;
 }
 
 .username {
   font-size: 0.9em;
-  opacity: 0.9;
+  color: #64748b;
+  font-weight: 500;
 }
 
 .logout-btn {
-  background: rgba(255,255,255,0.2);
-  border: 1px solid rgba(255,255,255,0.3);
+  background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+  border: none;
   color: white;
-  padding: 8px 16px;
-  border-radius: 5px;
+  padding: 10px 20px;
+  border-radius: 25px;
   cursor: pointer;
-  transition: background-color 0.3s;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
 }
 
 .logout-btn:hover {
-  background: rgba(255,255,255,0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
 }
 
 .chat-content {
@@ -576,47 +984,53 @@ export default {
 }
 
 .users-panel {
-  width: 250px;
-  background: white;
-  border-right: 1px solid #ddd;
-  padding: 20px;
+  width: 280px;
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(10px);
+  border-right: 1px solid rgba(255,255,255,0.3);
+  padding: 25px;
   overflow-y: auto;
+  border-radius: 0 0 0 20px;
+  box-shadow: 2px 0 15px rgba(0,0,0,0.05);
 }
 
 .users-panel h4 {
-  margin: 0 0 15px 0;
-  color: #333;
+  margin: 0 0 20px 0;
+  color: #4a5568;
+  font-weight: 600;
+  font-size: 1.1em;
 }
 
 .user-item {
-  padding: 12px;
-  margin: 5px 0;
-  border-radius: 8px;
+  padding: 15px;
+  margin: 8px 0;
+  border-radius: 15px;
   cursor: pointer;
-  transition: background-color 0.3s;
-  border: 1px solid #eee;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255,255,255,0.7);
 }
 
 .user-item:hover {
-  background: #f0f0f0;
+  background: rgba(148, 163, 184, 0.2);
+  transform: translateX(5px);
+  box-shadow: 0 4px 15px rgba(148, 163, 184, 0.15);
 }
 
 .user-item.active {
-  background: #667eea;
+  background: linear-gradient(45deg, #94a3b8, #64748b);
   color: white;
+  box-shadow: 0 4px 20px rgba(148, 163, 184, 0.3);
 }
 
 .user-item.offline {
   opacity: 0.6;
 }
 
-.user-item.offline .user-name {
-  color: #999;
-}
-
 .user-name {
   display: block;
-  font-weight: bold;
+  font-weight: 600;
+  font-size: 1em;
 }
 
 .user-code {
@@ -628,13 +1042,13 @@ export default {
 
 .online-status {
   display: block;
-  font-size: 0.7em;
-  color: #4CAF50;
-  margin-top: 2px;
+  font-size: 0.8em;
+  margin-top: 6px;
+  font-weight: 500;
 }
 
 .online-status.offline {
-  color: #f44336;
+  color: #f56565;
 }
 
 .chat-area {
@@ -646,96 +1060,200 @@ export default {
 .chat-box {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
-  background: white;
+  padding: 25px;
+  background: rgba(255,255,255,0.9);
+  backdrop-filter: blur(10px);
+  border-radius: 20px 20px 0 0;
 }
 
 .no-messages {
   text-align: center;
-  color: #999;
+  color: #a0aec0;
   margin-top: 50px;
   font-style: italic;
+  font-size: 1.1em;
 }
 
 .message {
-  margin-bottom: 15px;
-  max-width: 70%;
+  margin-bottom: 20px;
+  max-width: 75%;
+  animation: slideIn 0.3s ease-out;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .own-message {
   margin-left: auto;
-  margin-right: 0;
+  margin-right: 0px;
+  max-width: 70%;
+  align-self: flex-end;
 }
 
 .other-message {
-  margin-left: 0;
+  margin-left: 20px;
   margin-right: auto;
-}
-
-.own-message .message-content {
-  background: #667eea;
-  color: white;
+  max-width: 70%;
+  align-self: flex-start;
 }
 
 .message-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 5px;
+  margin-bottom: 8px;
   font-size: 0.9em;
+  padding: 0 5px;
+  width: 100%;
+}
+
+.own-message .message-header {
+  justify-content: flex-end;
+  text-align: right;
+  gap: 10px;
+}
+
+.other-message .message-header {
+  justify-content: flex-start;
+  gap: 10px;
 }
 
 .delete-btn {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.8em;
-  opacity: 0.7;
-  transition: opacity 0.3s;
-  padding: 2px 4px;
-  border-radius: 3px;
+  font-size: 1.2em;
+  opacity: 0.6;
+  transition: all 0.3s ease;
+  padding: 4px 8px;
+  border-radius: 15px;
 }
 
 .delete-btn:hover {
   opacity: 1;
   background: rgba(255, 0, 0, 0.1);
+  transform: scale(1.1);
 }
 
 .timestamp {
-  color: #999;
-  font-size: 0.8em;
+  color: #a0aec0;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.own-message .timestamp {
+  color: #64748b;
+}
+
+.own-message strong {
+  color: #475569;
+}
+
+.other-message .timestamp {
+  color: #a0aec0;
+}
+
+.other-message strong {
+  color: #4a5568;
 }
 
 .message-content {
-  background: #f0f0f0;
-  padding: 10px 15px;
-  border-radius: 15px;
+  background: rgba(255,255,255,0.9);
+  padding: 12px 18px;
+  border-radius: 20px;
   word-wrap: break-word;
+  box-shadow: 0 2px 15px rgba(0,0,0,0.06);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  line-height: 1.6;
+  font-size: 0.95em;
+  min-width: auto;
+  width: fit-content;
+  max-width: 100%;
+  transition: all 0.3s ease;
+}
+
+.own-message .message-content {
+  background: linear-gradient(135deg, #e2e8f0, #cbd5e0);
+  color: #2d3748;
+  border: 1px solid rgba(203, 213, 224, 0.8);
+  align-self: flex-end;
+}
+
+.other-message .message-content {
+  align-self: flex-start;
+}
+
+.message-content:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+}
+
+/* 文字说明样式 */
+.file-description {
+  background: rgba(255,255,255,0.9);
+  padding: 8px 12px;
+  border-radius: 15px;
+  margin-bottom: 10px;
+  font-size: 0.9em;
+  color: #4a5568;
+  border-left: 3px solid #94a3b8;
+}
+
+.own-message .file-description {
+  background: rgba(255,255,255,0.8);
+  color: #2d3748;
+  border-left: 3px solid #64748b;
 }
 
 .input-area {
-  padding: 20px;
-  background: white;
-  border-top: 1px solid #ddd;
+  padding: 25px;
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 0 0 20px 20px;
 }
 
 .file-preview {
   margin-bottom: 15px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .file-preview-content {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #f8f9fa;
-  border: 2px dashed #667eea;
-  border-radius: 8px;
+  gap: 15px;
+  padding: 15px 20px;
+  background: linear-gradient(135deg, rgba(226, 232, 240, 0.3), rgba(203, 213, 224, 0.3));
+  border: 2px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 20px;
   position: relative;
+  backdrop-filter: blur(5px);
 }
 
 .file-preview .file-icon {
-  font-size: 24px;
+  font-size: 28px;
+  animation: bounce 0.5s ease-out;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-10px); }
+  60% { transform: translateY(-5px); }
 }
 
 .file-preview .file-info {
@@ -743,159 +1261,184 @@ export default {
 }
 
 .file-preview .file-name {
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 2px;
+  font-weight: 600;
+  color: #4a5568;
+  margin-bottom: 4px;
+  font-size: 0.95em;
 }
 
 .file-preview .file-size {
   font-size: 0.85em;
-  color: #666;
+  color: #718096;
 }
 
 .remove-file-btn {
-  background: #dc3545;
+  background: linear-gradient(45deg, #ff6b6b, #ee5a52);
   color: white;
   border: none;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  transition: background-color 0.2s;
+  font-size: 14px;
+  font-weight: bold;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 10px rgba(255, 107, 107, 0.3);
 }
 
 .remove-file-btn:hover {
-  background: #c82333;
+  background: linear-gradient(45deg, #ee5a52, #dc3545);
+  transform: scale(1.1);
+  box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
 }
 
 .message-input-container {
   display: flex;
-  gap: 12px;
+  gap: 15px;
   align-items: flex-end;
 }
 
 .message-input {
   flex: 1;
-  padding: 12px 16px;
-  border: 2px solid #e9ecef;
+  padding: 15px 20px;
+  border: 2px solid rgba(148, 163, 184, 0.3);
   border-radius: 25px;
   outline: none;
   font-size: 14px;
   resize: none;
-  transition: border-color 0.2s;
+  transition: all 0.3s ease;
+  background: rgba(255,255,255,0.9);
+  backdrop-filter: blur(5px);
+  font-family: inherit;
+  line-height: 1.4;
+  min-height: 48px;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .message-input:focus {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
+  background: rgba(255,255,255,1);
 }
 
 .message-input:disabled {
-  background: #f5f5f5;
+  background: rgba(245, 245, 245, 0.9);
   cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .input-buttons {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+}
+
+.file-btn, .send-btn {
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  font-size: 1.4em;
+  font-weight: bold;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.15);
 }
 
 .file-btn {
-  width: 48px;
-  height: 48px;
-  background: #28a745;
+  background: linear-gradient(135deg, #28a745, #20c997);
   color: white;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
 }
 
 .file-btn:hover:not(:disabled) {
-  background: #218838;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4);
-}
-
-.file-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.file-btn:disabled {
-  background: #6c757d;
-  cursor: not-allowed;
-  box-shadow: none;
+  background: linear-gradient(135deg, #218838, #1a9974);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(40, 167, 69, 0.3);
 }
 
 .send-btn {
-  width: 48px;
-  height: 48px;
-  background: #667eea;
+  background: linear-gradient(135deg, #94a3b8, #64748b);
   color: white;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #5a67d8;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
+  background: linear-gradient(135deg, #64748b, #475569);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(148, 163, 184, 0.3);
 }
 
+.file-btn:active:not(:disabled),
 .send-btn:active:not(:disabled) {
   transform: translateY(0);
 }
 
+.file-btn:disabled,
 .send-btn:disabled {
-  background: #6c757d;
+  background: linear-gradient(135deg, #a0aec0, #718096);
   cursor: not-allowed;
-  box-shadow: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-/* 文件消息样式 */
+/* 文件消息样式优化 */
 .image-message {
-  max-width: 300px;
+  max-width: 350px;
 }
 
 .message-image {
   max-width: 100%;
-  max-height: 200px;
-  border-radius: 8px;
+  max-height: 250px;
+  border-radius: 15px;
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
 
 .message-image:hover {
   transform: scale(1.02);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.15);
 }
 
 .file-message {
+  max-width: 350px;
+}
+
+.file-container {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  background: #f9f9f9;
-  max-width: 300px;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 15px;
+  background: rgba(255,255,255,0.9);
+  backdrop-filter: blur(5px);
+  transition: all 0.3s ease;
+}
+
+.own-message .file-container {
+  background: rgba(255,255,255,0.8);
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.file-container:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
 
 .file-icon {
-  font-size: 24px;
+  font-size: 28px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
 }
 
 .file-details {
@@ -903,35 +1446,374 @@ export default {
 }
 
 .file-name {
-  font-weight: bold;
-  margin-bottom: 4px;
+  font-weight: 600;
+  margin-bottom: 6px;
   word-break: break-word;
+  color: #4a5568;
+  font-size: 0.9em;
+}
+
+.own-message .file-name {
+  color: #2d3748; /* 改为深色，确保在浅灰色背景上可见 */
 }
 
 .file-size {
   font-size: 0.8em;
-  color: #666;
-  margin-bottom: 8px;
+  color: #718096;
+  margin-bottom: 10px;
+}
+
+.own-message .file-size {
+  color: #4a5568; /* 改为深色，确保在浅灰色背景上可见 */
 }
 
 .file-info {
-  font-size: 0.8em;
-  color: #666;
-  margin-top: 5px;
+  font-size: 0.85em;
+  color: #64748b;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: rgba(226, 232, 240, 0.6);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.own-message .file-info {
+  color: #475569;
+  background: rgba(203, 213, 224, 0.6);
 }
 
 .download-btn {
-  padding: 4px 8px;
-  background: #007bff;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #64748b, #475569);
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 20px;
   cursor: pointer;
-  font-size: 0.8em;
-  transition: background-color 0.3s;
+  font-size: 0.85em;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 10px rgba(100, 116, 139, 0.3);
+  margin-right: 8px;
 }
 
 .download-btn:hover {
-  background: #0056b3;
+  background: linear-gradient(135deg, #475569, #334155);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(100, 116, 139, 0.4);
+}
+
+.file-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.preview-btn {
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border: none;
+  border-radius: 15px;
+  cursor: pointer;
+  font-size: 0.8em;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.preview-btn:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.open-app-btn {
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  border: none;
+  border-radius: 15px;
+  cursor: pointer;
+  font-size: 0.8em;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+.open-app-btn:hover {
+  background: linear-gradient(135deg, #059669, #047857);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+/* 文件预览模态框样式 */
+.preview-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(10px);
+  animation: modalFadeIn 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(10px);
+  }
+}
+
+.preview-modal-content {
+  background: white;
+  border-radius: 20px;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  animation: modalSlideIn 0.3s ease-out;
+  overflow: hidden;
+}
+
+@keyframes modalSlideIn {
+  from {
+    transform: scale(0.9) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 25px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.preview-title {
+  margin: 0;
+  font-size: 1.2em;
+  color: #2d3748;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5em;
+  cursor: pointer;
+  color: #64748b;
+  padding: 8px;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.close-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  transform: scale(1.1);
+}
+
+.preview-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  overflow: auto;
+  position: relative;
+}
+
+.image-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.code-preview {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #1e293b;
+}
+
+.loading, .error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  font-size: 1.1em;
+  color: #64748b;
+}
+
+.error {
+  color: #ef4444;
+}
+
+.code-content {
+  flex: 1;
+  margin: 0;
+  padding: 25px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.unsupported-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  color: #64748b;
+}
+
+.file-icon-large {
+  font-size: 4em;
+  margin-bottom: 20px;
+  animation: pulse 2s infinite;
+}
+
+.unsupported-preview h4 {
+  margin: 10px 0;
+  color: #2d3748;
+  font-size: 1.3em;
+  word-break: break-word;
+}
+
+.unsupported-preview p {
+  margin: 15px 0;
+  font-size: 1em;
+}
+
+.preview-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 25px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.file-info-detailed {
+  display: flex;
+  gap: 20px;
+  font-size: 0.9em;
+  color: #64748b;
+  flex-wrap: wrap;
+}
+
+.image-dimensions {
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.action-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 15px;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.action-btn.download {
+  background: linear-gradient(135deg, #64748b, #475569);
+  color: white;
+}
+
+.action-btn.open {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .preview-modal-content {
+    max-width: 95vw;
+    max-height: 95vh;
+    margin: 10px;
+  }
+  
+  .preview-header,
+  .preview-footer {
+    padding: 15px 20px;
+  }
+  
+  .preview-title {
+    font-size: 1.1em;
+  }
+  
+  .file-info-detailed {
+    font-size: 0.8em;
+  }
+  
+  .preview-actions {
+    flex-wrap: wrap;
+  }
+  
+  .action-btn {
+    font-size: 0.8em;
+    padding: 6px 12px;
+  }
+}
+
+.text-message {
+  word-wrap: break-word;
+  white-space: pre-wrap;
 }
 </style>

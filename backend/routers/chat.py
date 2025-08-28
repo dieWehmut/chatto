@@ -16,11 +16,13 @@ router = APIRouter()
 # 文件上传配置
 UPLOAD_DIR = "uploads"
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-ALLOWED_FILE_TYPES = {"text/plain", "application/pdf", "application/msword", 
-                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                     "application/vnd.ms-excel", 
-                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/tiff", "image/svg+xml"}
+
+# 移除文件类型限制，支持所有文件类型
+# ALLOWED_FILE_TYPES = {"text/plain", "application/pdf", "application/msword", 
+#                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+#                      "application/vnd.ms-excel", 
+#                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
 
 # 创建上传目录
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -78,13 +80,16 @@ async def upload_file(
     if file.size and file.size > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail=f"文件大小超过限制 ({MAX_FILE_SIZE // (1024*1024)}MB)")
     
-    # 验证文件类型
-    allowed_types = ALLOWED_IMAGE_TYPES | ALLOWED_FILE_TYPES
-    if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="不支持的文件类型")
+    # 移除文件类型限制，支持任意文件类型
+    # 只检查恶意文件扩展名
+    if file.filename:
+        dangerous_extensions = {'.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar'}
+        file_extension = Path(file.filename).suffix.lower()
+        if file_extension in dangerous_extensions:
+            raise HTTPException(status_code=400, detail="不支持可执行文件类型")
     
     # 确定消息类型
-    message_type = "image" if file.content_type in ALLOWED_IMAGE_TYPES else "file"
+    message_type = "image" if file.content_type and file.content_type in ALLOWED_IMAGE_TYPES else "file"
     
     # 生成唯一文件名
     file_extension = Path(file.filename).suffix if file.filename else ""
