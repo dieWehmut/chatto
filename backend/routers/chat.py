@@ -334,3 +334,44 @@ async def get_users(db: Session = Depends(get_db)) -> List[UserResponse]:
             created_at=getattr(user, "created_at")
         ))
     return user_responses
+
+class ClearChatRequest(BaseModel):
+    admin_user_id: int
+    target_user_id: int
+
+@router.post("/clear_chat_history")
+async def clear_chat_history(request: ClearChatRequest, db: Session = Depends(get_db)):
+    """管理员清空与指定用户的聊天记录"""
+    
+    # 验证管理员权限
+    admin_user = db.query(User).filter(User.id == request.admin_user_id).first()
+    if not admin_user:
+        raise HTTPException(status_code=404, detail="管理员用户不存在")
+    if not getattr(admin_user, "is_admin"):
+        raise HTTPException(status_code=403, detail="权限不足，需要管理员权限")
+    
+    # 验证目标用户存在
+    target_user = db.query(User).filter(User.id == request.target_user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="目标用户不存在")
+    
+    try:
+        # 删除管理员与目标用户之间的所有消息
+        # 删除管理员发送给目标用户的消息
+        db.query(Message).filter(
+            Message.user_id == request.admin_user_id,
+            Message.target_user_id == request.target_user_id
+        ).delete()
+        
+        # 删除目标用户发送的消息（因为普通用户的消息没有target_user_id，所以是发给管理员的）
+        db.query(Message).filter(
+            Message.user_id == request.target_user_id
+        ).delete()
+        
+        db.commit()
+        
+        return {"message": f"已清空与用户 {getattr(target_user, 'username')} 的聊天记录"}
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"清空聊天记录失败: {str(e)}")

@@ -3,8 +3,14 @@
     <div class="chat-header">
       <div class="user-info">
         <h3>{{ userInfo?.is_admin ? '管理员面板' : '聊天室' }}</h3>
+        
       </div>
-      <button @click="logout" class="logout-btn">退出登录</button>
+      <div class="header-buttons">
+        <button v-if="userInfo?.is_admin" @click="showUserManagement = true" class="manage-btn">
+          👥 用户管理
+        </button>
+        <button @click="logout" class="logout-btn">退出登录</button>
+      </div>
     </div>
     
     <div class="chat-content">
@@ -28,7 +34,36 @@
         </div>
       </div>
 
-      <div class="chat-area">
+      <!-- 普通用户界面：直接显示聊天区域 -->
+
+      <div class="chat-area" :class="{ 'full-width': !userInfo?.is_admin }">
+        <!-- 普通用户：显示管理员在线状态 -->
+        <div v-if="!userInfo?.is_admin" class="admin-status-bar">
+          <div class="admin-status">
+            <span class="status-label">管理员状态:</span>
+            <span v-if="adminOnlineStatus" class="status-indicator online">
+              👑 {{ adminOnlineStatus.username }} - 🟢 在线
+            </span>
+            <span v-else class="status-indicator offline">
+              👑 管理员 - 🔴 离线
+            </span>
+          </div>
+        </div>
+        
+        <!-- 管理员：聊天工具栏 -->
+        <div v-if="userInfo?.is_admin && selectedUserId" class="chat-toolbar">
+          <div class="toolbar-left">
+            <span class="selected-user-info">
+              与 <strong>{{ getSelectedUserName() }}</strong> 的对话
+            </span>
+          </div>
+          <div class="toolbar-right">
+            <button @click="clearChatHistory" class="clear-btn" title="清空聊天记录">
+              🧹 清屏
+            </button>
+          </div>
+        </div>
+        
         <div class="chat-box" ref="chatBoxRef">
           <div v-if="messages.length === 0" class="no-messages">
             {{ userInfo?.is_admin ? '选择一个用户开始聊天' : '开始聊天吧！' }}
@@ -267,12 +302,110 @@
       </div>
     </div>
   </div>
+
+  <!-- 用户管理模态框 -->
+  <div v-if="showUserManagement" class="modal-overlay" @click="closeUserManagement">
+    <div class="modal-content user-management-modal" @click.stop>
+      <div class="modal-header">
+        <h3>👥 用户管理</h3>
+        <button @click="closeUserManagement" class="close-btn">✕</button>
+      </div>
+      
+      <div class="modal-body">
+        <!-- 创建新用户 -->
+        <div class="section">
+          <h4>📝 创建新用户</h4>
+          <div class="form-group">
+            <label>用户名:</label>
+            <input v-model="newUserForm.username" type="text" placeholder="输入用户名" />
+          </div>
+          <div class="form-group">
+            <label>邀请码:</label>
+            <input v-model="newUserForm.invite_code" type="text" placeholder="输入邀请码" />
+          </div>
+          <div class="form-group">
+            <label>
+              <input v-model="newUserForm.is_admin" type="checkbox" />
+              管理员权限
+            </label>
+          </div>
+          <button @click="createUser" class="action-btn primary" :disabled="!newUserForm.username || !newUserForm.invite_code">
+            ➕ 创建用户
+          </button>
+        </div>
+
+        <!-- 用户列表 -->
+        <div class="section">
+          <h4>👥 用户列表</h4>
+          <div class="users-table">
+            <div class="table-header">
+              <span>用户名</span>
+              <span>邀请码</span>
+              <span>权限</span>
+              <span>状态</span>
+              <span>操作</span>
+            </div>
+            <div v-for="user in managementUsers" :key="user.id" class="table-row">
+              <span class="username">{{ user.username }}</span>
+              <span class="invite-code">{{ user.invite_code }}</span>
+              <span class="admin-badge" :class="{ admin: user.is_admin }">
+                {{ user.is_admin ? '👑 管理员' : '👤 普通用户' }}
+              </span>
+              <span class="status" :class="{ online: user.is_online }">
+                {{ user.is_online ? '🟢 在线' : '🔴 离线' }}
+              </span>
+              <div class="actions">
+                <button @click="startEditUser(user)" class="edit-btn" title="编辑用户">
+                  ✏️
+                </button>
+                <button v-if="user.id !== userInfo.user_id" @click="deleteUser(user)" 
+                        class="delete-btn" title="删除用户">
+                  🗑️
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑用户模态框 -->
+  <div v-if="showEditUser" class="modal-overlay" @click="closeEditUser">
+    <div class="modal-content edit-user-modal" @click.stop>
+      <div class="modal-header">
+        <h3>✏️ 编辑用户</h3>
+        <button @click="closeEditUser" class="close-btn">✕</button>
+      </div>
+      
+      <div class="modal-body">
+        <div class="form-group">
+          <label>用户名:</label>
+          <input v-model="editUserForm.username" type="text" placeholder="输入新用户名" />
+        </div>
+        <div class="form-group">
+          <label>邀请码:</label>
+          <input v-model="editUserForm.invite_code" type="text" placeholder="输入新邀请码" />
+        </div>
+        <div class="form-group">
+          <label>
+            <input v-model="editUserForm.is_admin" type="checkbox" />
+            管理员权限
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button @click="closeEditUser" class="cancel-btn">取消</button>
+          <button @click="updateUser" class="action-btn primary">保存修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
 import { ref, onMounted, nextTick, onUnmounted, watch } from 'vue';
 import { getUserInfo, clearUserInfo } from '../utils/storage';
-import { apiGet, apiPost } from '../utils/api';
+import { apiGet, apiPost, apiPut } from '../utils/api';
 
 export default {
   setup() {
@@ -287,6 +420,25 @@ export default {
     const fileInput = ref(null);
     const textareaRef = ref(null);
     const chatBoxRef = ref(null);
+    
+    // 管理员在线状态（用于普通用户界面）
+    const adminOnlineStatus = ref(null);
+    
+    // 用户管理相关状态
+    const showUserManagement = ref(false);
+    const showEditUser = ref(false);
+    const managementUsers = ref([]);
+    const newUserForm = ref({
+      username: '',
+      invite_code: '',
+      is_admin: false
+    });
+    const editUserForm = ref({
+      id: null,
+      username: '',
+      invite_code: '',
+      is_admin: false
+    });
     
     // 文件预览相关
     const previewModal = ref({
@@ -398,8 +550,21 @@ export default {
       try {
         const response = await apiGet('/chat/users');
         users.value = response;
-        allUsers.value = response.filter(u => !u.is_admin); // 显示所有非管理员用户
-        onlineUsers.value = response.filter(u => !u.is_admin && u.is_online);
+        
+        if (userInfo.value?.is_admin) {
+          // 管理员看到所有用户
+          allUsers.value = response;
+          onlineUsers.value = response.filter(u => u.is_online);
+        } else {
+          // 普通用户看到所有用户（包括管理员）
+          allUsers.value = response;
+          onlineUsers.value = response.filter(u => u.is_online);
+          
+          // 设置管理员在线状态
+          const onlineAdmin = response.find(u => u.is_admin && u.is_online);
+          adminOnlineStatus.value = onlineAdmin || null;
+        }
+        
         console.log('所有用户列表:', allUsers.value);
       } catch (err) {
         console.error('加载用户列表失败:', err);
@@ -843,9 +1008,8 @@ export default {
 
       await loadChatHistory(true); // 初始加载时滚动到底部
       
-      if (userInfo.value.is_admin) {
-        await loadUsers();
-      }
+      // 加载用户列表（管理员和普通用户都需要）
+      await loadUsers();
 
       // 监听textarea输入变化，自动调整高度
       watch(newMessage, () => {
@@ -857,9 +1021,7 @@ export default {
       // 定期刷新聊天记录和用户列表
       setInterval(async () => {
         await loadChatHistory(false); // 定期刷新时不自动滚动
-        if (userInfo.value.is_admin) {
-          await loadUsers();
-        }
+        await loadUsers(); // 普通用户也需要刷新以获取管理员状态
         // 保持在线状态
         await updateOnlineStatus(true);
       }, 3000);
@@ -881,6 +1043,150 @@ export default {
       }
     });
 
+    // 用户管理方法
+    const closeUserManagement = () => {
+      showUserManagement.value = false;
+      resetNewUserForm();
+    };
+
+    const resetNewUserForm = () => {
+      newUserForm.value = {
+        username: '',
+        invite_code: '',
+        is_admin: false
+      };
+    };
+
+    const loadManagementUsers = async () => {
+      try {
+        const response = await apiGet(`/auth/admin/users?admin_user_id=${userInfo.value.user_id}`);
+        managementUsers.value = response;
+      } catch (error) {
+        console.error('加载用户列表失败:', error);
+        alert('加载用户列表失败：' + (error.response?.data?.detail || error.message));
+      }
+    };
+
+    const createUser = async () => {
+      try {
+        const response = await apiPost('/auth/admin/create_user', {
+          admin_user_id: userInfo.value.user_id,
+          username: newUserForm.value.username,
+          invite_code: newUserForm.value.invite_code,
+          is_admin: newUserForm.value.is_admin
+        });
+        
+        managementUsers.value.unshift(response);
+        resetNewUserForm();
+        alert('用户创建成功！');
+      } catch (error) {
+        console.error('创建用户失败:', error);
+        alert('创建用户失败：' + (error.response?.data?.detail || error.message));
+      }
+    };
+
+    const startEditUser = (user) => {
+      editUserForm.value = {
+        id: user.id,
+        username: user.username,
+        invite_code: user.invite_code,
+        is_admin: user.is_admin
+      };
+      showEditUser.value = true;
+    };
+
+    const closeEditUser = () => {
+      showEditUser.value = false;
+      editUserForm.value = {
+        id: null,
+        username: '',
+        invite_code: '',
+        is_admin: false
+      };
+    };
+
+    const updateUser = async () => {
+      try {
+        const response = await apiPut('/auth/admin/update_user', {
+          admin_user_id: userInfo.value.user_id,
+          target_user_id: editUserForm.value.id,
+          new_username: editUserForm.value.username,
+          new_invite_code: editUserForm.value.invite_code,
+          is_admin: editUserForm.value.is_admin
+        });
+        
+        // 更新列表中的用户信息
+        const index = managementUsers.value.findIndex(u => u.id === editUserForm.value.id);
+        if (index !== -1) {
+          managementUsers.value[index] = response;
+        }
+        
+        closeEditUser();
+        alert('用户信息更新成功！');
+      } catch (error) {
+        console.error('更新用户失败:', error);
+        alert('更新用户失败：' + (error.response?.data?.detail || error.message));
+      }
+    };
+
+    const deleteUser = async (user) => {
+      if (!confirm(`确定要删除用户 "${user.username}" 吗？此操作不可恢复！`)) {
+        return;
+      }
+      
+      try {
+        await apiGet(`/auth/admin/delete_user?admin_user_id=${userInfo.value.user_id}&target_user_id=${user.id}`);
+        
+        // 从列表中移除用户
+        managementUsers.value = managementUsers.value.filter(u => u.id !== user.id);
+        alert('用户删除成功！');
+      } catch (error) {
+        console.error('删除用户失败:', error);
+        alert('删除用户失败：' + (error.response?.data?.detail || error.message));
+      }
+    };
+
+    // 获取选中用户的名称
+    const getSelectedUserName = () => {
+      if (!selectedUserId.value) return '';
+      const user = allUsers.value.find(u => u.id === selectedUserId.value);
+      return user ? user.username : '未知用户';
+    };
+
+    // 清空聊天记录
+    const clearChatHistory = async () => {
+      if (!selectedUserId.value) {
+        alert('请先选择一个用户');
+        return;
+      }
+      
+      const userName = getSelectedUserName();
+      if (!confirm(`确定要清空与用户 "${userName}" 的所有聊天记录吗？此操作不可恢复！`)) {
+        return;
+      }
+      
+      try {
+        await apiPost('/chat/clear_chat_history', {
+          admin_user_id: userInfo.value.user_id,
+          target_user_id: selectedUserId.value
+        });
+        
+        // 清空当前显示的消息
+        messages.value = [];
+        alert('聊天记录已清空！');
+      } catch (error) {
+        console.error('清空聊天记录失败:', error);
+        alert('清空聊天记录失败：' + (error.response?.data?.detail || error.message));
+      }
+    };
+
+    // 监听用户管理模态框的打开
+    watch(showUserManagement, (newValue) => {
+      if (newValue) {
+        loadManagementUsers();
+      }
+    });
+
     return {
       messages,
       users,
@@ -894,6 +1200,22 @@ export default {
       textareaRef,
       chatBoxRef,
       previewModal,
+      adminOnlineStatus, // 添加管理员在线状态
+      // 用户管理相关
+      showUserManagement,
+      showEditUser,
+      managementUsers,
+      newUserForm,
+      editUserForm,
+      closeUserManagement,
+      createUser,
+      startEditUser,
+      closeEditUser,
+      updateUser,
+      deleteUser,
+      getSelectedUserName,
+      clearChatHistory,
+      // 原有方法
       sendMessage,
       loadChatHistory,
       selectUser,
@@ -1040,6 +1362,14 @@ export default {
   margin-top: 4px;
 }
 
+.user-role {
+  display: block;
+  font-size: 0.8em;
+  opacity: 0.8;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
 .online-status {
   display: block;
   font-size: 0.8em;
@@ -1055,6 +1385,103 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+.chat-area.full-width {
+  width: 100%;
+  max-width: none;
+}
+
+/* 管理员状态栏样式 */
+.admin-status-bar {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border-bottom: 1px solid #e2e8f0;
+  padding: 12px 20px;
+  border-radius: 20px 20px 0 0;
+  backdrop-filter: blur(10px);
+}
+
+.admin-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.9em;
+}
+
+.status-label {
+  font-weight: 600;
+  color: #64748b;
+}
+
+.status-indicator {
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 20px;
+  transition: all 0.3s ease;
+}
+
+.status-indicator.online {
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  color: #166534;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.2);
+}
+
+.status-indicator.offline {
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  color: #991b1b;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2);
+}
+
+/* 聊天工具栏样式 */
+.chat-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  border-bottom: 1px solid #e2e8f0;
+  padding: 10px 20px;
+  backdrop-filter: blur(10px);
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+}
+
+.selected-user-info {
+  font-size: 0.95em;
+  color: #475569;
+  font-weight: 500;
+}
+
+.toolbar-right {
+  display: flex;
+  gap: 10px;
+}
+
+.clear-btn {
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.clear-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+}
+
+.clear-btn:active {
+  transform: translateY(0);
 }
 
 .chat-box {
@@ -1815,5 +2242,321 @@ export default {
 .text-message {
   word-wrap: break-word;
   white-space: pre-wrap;
+}
+
+/* 用户管理样式 */
+.header-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.manage-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.manage-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+.user-management-modal {
+  width: 90%;
+  max-width: 800px;
+}
+
+.edit-user-modal {
+  width: 90%;
+  max-width: 400px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.3em;
+  color: #374151;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5em;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.section {
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.section h4 {
+  margin: 0 0 16px 0;
+  font-size: 1.1em;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.form-group input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.95em;
+  transition: border-color 0.2s ease;
+}
+
+.form-group input[type="text"]:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.form-group input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+.action-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.action-btn.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.users-table {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.table-header {
+  display: grid;
+  grid-template-columns: 1.5fr 1.5fr 1fr 1fr 1fr;
+  gap: 16px;
+  padding: 12px 16px;
+  background: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.9em;
+}
+
+.table-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1.5fr 1fr 1fr 1fr;
+  gap: 16px;
+  padding: 12px 16px;
+  border-top: 1px solid #e5e7eb;
+  align-items: center;
+  transition: background-color 0.2s ease;
+}
+
+.table-row:hover {
+  background: #f9fafb;
+}
+
+.table-row .username {
+  font-weight: 500;
+  color: #374151;
+}
+
+.table-row .invite-code {
+  font-family: 'Monaco', 'Menlo', monospace;
+  background: #f3f4f6;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+.admin-badge {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.8em;
+  font-weight: 500;
+  text-align: center;
+}
+
+.admin-badge.admin {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.admin-badge:not(.admin) {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.status {
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.status.online {
+  color: #059669;
+}
+
+.status:not(.online) {
+  color: #9ca3af;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-btn, .delete-btn {
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.edit-btn {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.edit-btn:hover {
+  background: #bfdbfe;
+}
+
+.delete-btn {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.delete-btn:hover {
+  background: #fecaca;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.cancel-btn {
+  padding: 10px 20px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+  color: #374151;
+  font-size: 0.95em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  background: #f9fafb;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 </style>

@@ -11,9 +11,21 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="聊天系统 API", description="基于邀请码的聊天系统")
 
+# 配置允许的源，包括本地开发和 GitHub Pages
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",  # Vite 默认端口
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "https://diewehmut.github.io",  # GitHub Pages 域名
+    "http://localhost:8080",
+    "http://127.0.0.1:8080"
+]
+
+# 添加 CORS 中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
