@@ -5,22 +5,33 @@ from routers import chat, auth
 from app.database import engine
 from app.models import Base
 import os
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
 
 # 创建数据库表
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="聊天系统 API", description="基于邀请码的聊天系统")
 
-# 配置允许的源，包括本地开发和 GitHub Pages
-allowed_origins = [
-    "http://localhost:3000",
-    "http://localhost:5173",  # Vite 默认端口
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-    "https://diewehmut.github.io",  # GitHub Pages 域名
-    "http://localhost:8080",
-    "http://127.0.0.1:8080"
-]
+# 从环境变量获取CORS配置
+cors_origins = os.getenv("CORS_ORIGINS", "").split(",")
+if not cors_origins or cors_origins == [""]:
+    # 默认开发环境配置
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://localhost:5173",  # Vite 默认端口
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "https://diewehmut.github.io",  # GitHub Pages 域名
+        "https://diewehmut.github.io/chatto1.0.0",  # GitHub Pages 子路径
+        "http://localhost:8080",
+        "http://127.0.0.1:8080"
+    ]
+else:
+    # 生产环境配置
+    allowed_origins = [origin.strip() for origin in cors_origins]
 
 # 添加 CORS 中间件
 app.add_middleware(

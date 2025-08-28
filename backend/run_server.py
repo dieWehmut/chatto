@@ -20,11 +20,19 @@ if __name__ == "__main__":
     
     host = os.getenv("SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("SERVER_PORT", "8000"))
+    reload_env = os.getenv("ENVIRONMENT", "development")
+    
+    # 生产环境不启用reload
+    reload = reload_env == "development"
+    
+    print(f"启动服务器: {host}:{port}")
+    print(f"环境模式: {reload_env}")
+    print(f"自动重载: {reload}")
     
     # 启动服务器
     uvicorn.run(
         "app.main:app",
         host=host,
         port=port,
-        reload=True
+        reload=reload
     )
