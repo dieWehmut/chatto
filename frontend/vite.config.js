@@ -11,8 +11,8 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [vue()],
     
-    // GitHub Pages 需要设置正确的 base 路径，本地开发时使用根路径
-    base: isGitHubPages ? '/chatto1.0.0/' : '/',
+    // 🔥 关键修复：本地开发用根路径，生产环境用 GitHub Pages 路径
+    base: mode === 'development' ? '/' : '/chatto1.0.0/',
     
     // 定义全局变量
     define: {
