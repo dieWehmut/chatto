@@ -1,23 +1,32 @@
-// 根据环境自动选择 API 地址
+// 智能 API 地址配置
 const getApiBaseUrl = () => {
-  // 如果是 GitHub Pages 环境
-  if (window.location.hostname.includes("github.io")) {
-    // 从环境变量或默认配置获取服务器地址
-    // 请在部署前将此地址替换为您的实际服务器地址
-    const serverUrl =
-      import.meta.env.VITE_PROD_API_URL || "http://YOUR_SERVER_IP:8000";
-    if (serverUrl === "http://YOUR_SERVER_IP:8000") {
-      console.warn(
-        "警告: 请在 .env 文件中配置 VITE_PROD_API_URL 环境变量为您的服务器地址"
-      );
-    }
-    return serverUrl;
-  }
   // 本地开发环境
-  return import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
-};
+  if (import.meta.env.DEV) {
+    console.log('🔧 开发模式: 使用代理服务器')
+    return '/api' // 使用 Vite 代理
+  }
+  
+  // GitHub Pages 生产环境
+  if (window.location.hostname.includes('github.io')) {
+    const prodApiUrl = import.meta.env.VITE_PROD_API_URL
+    if (!prodApiUrl || prodApiUrl === 'http://YOUR_DEBIAN_SERVER_IP:8000') {
+      console.error('❌ 错误: 请在 .env.production 文件中配置正确的 VITE_PROD_API_URL')
+      alert('API 配置错误，请联系管理员')
+      return 'http://localhost:8000' // 备用地址
+    }
+    console.log('🌐 GitHub Pages 模式: 使用生产服务器', prodApiUrl)
+    return prodApiUrl
+  }
+  
+  // 其他生产环境
+  const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+  console.log('🚀 生产模式: 使用配置的 API 地址', apiUrl)
+  return apiUrl
+}
 
-export const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getApiBaseUrl()
+
+console.log('📡 API 基础地址:', API_BASE_URL)
 
 export async function apiGet(path) {
   const res = await fetch(`${API_BASE_URL}${path}`);

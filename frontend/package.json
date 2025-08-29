@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "build:github": "NODE_ENV=production npm run build",
-    "preview": "vite preview"
+    "dev": "vite --mode development",
+    "build": "vite build --mode development",
+    "build:prod": "vite build --mode production",
+    "build:github": "GITHUB_PAGES=true vite build --mode production",
+    "preview": "vite preview",
+    "preview:github": "vite preview --base=/chatto1.0.0/"
   },
   "dependencies": {
     "vue": "^3.5.18"
