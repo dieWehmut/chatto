@@ -5,12 +5,14 @@
 ### ✅ 已完成的准备工作
 
 1. **后端代码优化**
+
    - ✅ 支持环境变量配置
    - ✅ 生产/开发环境切换
    - ✅ CORS 配置优化
    - ✅ 创建了 `.env.example` 配置模板
 
 2. **前端代码优化**
+
    - ✅ 支持 GitHub Pages 部署
    - ✅ API 地址环境变量配置
    - ✅ 构建配置优化
@@ -48,6 +50,7 @@ d:\WorkFiles\chatto\frontend\.env.production
 ```
 
 将 `YOUR_SERVER_IP` 替换为实际的服务器地址：
+
 ```bash
 # 示例 - 使用 IP 地址
 VITE_PROD_API_URL=http://192.168.1.100:8000
@@ -62,6 +65,7 @@ VITE_PROD_API_URL=https://your-server.com:8000
 ### 第三步：部署前端到 GitHub Pages
 
 运行部署脚本：
+
 ```bash
 # Windows 用户
 d:\WorkFiles\chatto\frontend\deploy.bat
@@ -76,6 +80,7 @@ npm run build
 ## 📁 当前项目状态
 
 ### ✅ 前端构建完成
+
 - 构建输出目录: `d:\WorkFiles\chatto\frontend\dist`
 - 包含文件:
   - `index.html` (主页面)
@@ -84,10 +89,12 @@ npm run build
 ### 📝 配置文件位置
 
 **后端配置:**
+
 - 配置模板: `backend\.env.example`
 - 部署文档: `backend\DEPLOYMENT.md`
 
 **前端配置:**
+
 - 生产环境配置: `frontend\.env.production`
 - 部署脚本: `frontend\deploy.bat` / `frontend\deploy.sh`
 - 部署文档: `frontend\DEPLOYMENT.md`
@@ -95,6 +102,7 @@ npm run build
 ## 🔧 下一步操作
 
 ### 1. 后端部署
+
 ```bash
 # 在您的服务器上执行
 cd /path/to/backend
@@ -107,6 +115,7 @@ python run_server.py
 ```
 
 ### 2. 前端配置和部署
+
 ```bash
 # 在本地执行
 cd d:\WorkFiles\chatto\frontend
@@ -133,8 +142,9 @@ deploy.bat  # Windows
 ## 🌐 访问地址
 
 部署完成后，您的应用将在以下地址可用：
+
 - **前端**: https://diewehmut.github.io/chatto1.0.0
-- **后端**: http://您的服务器IP:8000
+- **后端**: http://您的服务器 IP:8000
 
 ## ⚠️ 重要提醒
 
@@ -146,6 +156,7 @@ deploy.bat  # Windows
 ## 🔍 故障排除
 
 如果遇到问题，请查看：
+
 - 后端部署文档: `backend/DEPLOYMENT.md`
 - 前端部署文档: `frontend/DEPLOYMENT.md`
 - 浏览器开发者工具的网络和控制台选项卡
