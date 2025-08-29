@@ -9,7 +9,7 @@ const getApiBaseUrl = () => {
   // GitHub Pages 生产环境
   if (window.location.hostname.includes('github.io')) {
     const prodApiUrl = import.meta.env.VITE_PROD_API_URL
-    if (!prodApiUrl || prodApiUrl === 'http://YOUR_DEBIAN_SERVER_IP:8000') {
+    if (!prodApiUrl || prodApiUrl === 'https://hc.lan') {
       console.error('❌ 错误: 请在 .env.production 文件中配置正确的 VITE_PROD_API_URL')
       alert('API 配置错误，请联系管理员')
       return 'http://localhost:8000' // 备用地址
