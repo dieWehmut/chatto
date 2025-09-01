@@ -146,3 +146,5 @@ Thumbs.db
 
 # Uploads
 uploads/
+ssl/*.key
+ssl/*.pem

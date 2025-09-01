@@ -25,14 +25,24 @@ if __name__ == "__main__":
     # 生产环境不启用reload
     reload = reload_env == "development"
     
+    # SSL 配置
+    ssl_keyfile = os.getenv("SSL_KEYFILE")
+    ssl_certfile = os.getenv("SSL_CERTFILE")
+    
     print(f"启动服务器: {host}:{port}")
     print(f"环境模式: {reload_env}")
     print(f"自动重载: {reload}")
+    if ssl_keyfile and ssl_certfile:
+        print(f"HTTPS 模式: {ssl_certfile}")
+    else:
+        print("HTTP 模式")
     
     # 启动服务器
     uvicorn.run(
         "app.main:app",
         host=host,
         port=port,
-        reload=reload
+        reload=reload,
+        ssl_keyfile=ssl_keyfile,
+        ssl_certfile=ssl_certfile
     )

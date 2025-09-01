@@ -13,6 +13,10 @@ from utils.invite import (
 
 router = APIRouter()
 
+@router.get("/health")
+async def health_check():
+    return {"status": "ok", "message": "Auth service is running"}
+
 class LoginRequest(BaseModel):
     invite_code: str
 

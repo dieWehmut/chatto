@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>连接测试页面</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>HC Chat 连接测试</h1>
+    <div id="status"></div>
+    
+    <script>
+        async function testConnection() {
+            const statusDiv = document.getElementById('status');
+            
+            try {
+                // 测试健康检查接口
+                const response = await fetch('/health');
+                if (response.ok) {
+                    const data = await response.json();
+                    statusDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ 连接成功！<br>
+                            服务器响应: ${JSON.stringify(data)}<br>
+                            现在你可以访问完整的聊天应用了。
+                        </div>
+                    `;
+                } else {
+                    throw new Error('HTTP ' + response.status);
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="status error">
+                        ❌ 连接失败: ${error.message}<br>
+                        请检查：<br>
+                        1. 确保你在同一个网络中<br>
+                        2. 检查 hc.lan 是否能正确解析<br>
+                        3. 尝试访问 https://192.168.1.117
+                    </div>
+                `;
+            }
+        }
+        
+        // 页面加载后测试连接
+        testConnection();
+    </script>
+</body>
+</html>

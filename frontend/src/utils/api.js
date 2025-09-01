@@ -28,6 +28,20 @@ export const API_BASE_URL = getApiBaseUrl()
 
 console.log('� API 基础地址:', API_BASE_URL)
 
+// 检查配置是否正确设置
+if (import.meta.env.MODE === 'production') {
+  const prodApiUrl = import.meta.env.VITE_PROD_API_URL
+  
+  // 修复验证逻辑 - 移除严格的占位符检查
+  if (!prodApiUrl || prodApiUrl.trim() === '') {
+    console.error('❌ 错误: 请在 .env.production 文件中配置正确的 VITE_PROD_API_URL')
+  } else {
+    console.log('✅ 生产环境 API 配置已加载:', prodApiUrl)
+  }
+} else {
+  console.log('🔧 开发环境模式')
+}
+
 export async function apiGet(path) {
   const res = await fetch(`${API_BASE_URL}${path}`);
   if (!res.ok) {
