@@ -3,8 +3,8 @@
 # 为新域名 hc.1343263.xyz 获取 SSL 证书
 # 确保您已经安装了 certbot
 
-DOMAIN="hc.1343263.xyz"
-EMAIL="your-email@example.com"  # 请替换为您的邮箱地址
+DOMAIN="${DOMAIN:-hc.1343263.xyz}"
+EMAIL="${EMAIL:-}"
 
 echo "正在为域名 $DOMAIN 获取 SSL 证书..."
 
@@ -18,11 +18,17 @@ fi
 # 停止 Nginx 服务以释放端口
 sudo systemctl stop nginx
 
-# 使用 certbot 获取证书
+# 选择邮箱参数
+if [ -z "$EMAIL" ]; then
+    EMAIL_FLAG="--register-unsafely-without-email"
+else
+    EMAIL_FLAG="--email $EMAIL --no-eff-email"
+fi
+
+# 使用 certbot 获取证书（standalone 模式，临时占用 80 端口）
 sudo certbot certonly --standalone \
-    --email $EMAIL \
+    $EMAIL_FLAG \
     --agree-tos \
-    --no-eff-email \
     -d $DOMAIN
 
 if [ $? -eq 0 ]; then
